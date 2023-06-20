@@ -96,7 +96,7 @@ gospider -S "$subs_dir/filtered_hosts.txt" --js -t 50 -d 3 --sitemap --robots -w
 # Cleaning the output
 echo -e "${GREEN}[+] Cleaning the output${NC}"
 sed -i '/^.\{2048\}./d' "$subs_dir/gospider.txt"
-cat "$subs_dir/gospider.txt" | grep -Eo 'https?://[^ ]+' | sed 's/]$//' | unfurl -u domains | grep ".example.com$" | sort -u > "$subs_dir/scrap_subs.txt"
+cat "$subs_dir/gospider.txt" | grep -Eo 'https?://[^ ]+' | sed 's/]$//' | unfurl -u domains | grep -Eo '([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\.[^.]{2,}' | sort -u > "$subs_dir/scrap_subs.txt"
 
 # Resolving target subdomains
 echo -e "${GREEN}[+] Resolving target subdomains${NC}"
