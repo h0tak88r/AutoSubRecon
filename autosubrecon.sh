@@ -16,6 +16,15 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Display tool name and owner
+echo -e "${RED}███████╗██╗   ██╗██████╗ ██╗     ███████╗██╗███╗   ██╗ ██████╗${NC}"
+echo -e "${RED}██╔════╝██║   ██║██╔══██╗██║     ██╔════╝██║████╗  ██║██╔════╝${NC}"
+echo -e "${RED}███████╗██║   ██║██████╔╝██║     █████╗  ██║██╔██╗ ██║██║  ███╗${NC}"
+echo -e "${RED}╚════██║██║   ██║██╔═══╝ ██║     ██╔══╝  ██║██║╚██╗██║██║   ██║${NC}"
+echo -e "${RED}███████║╚██████╔╝██║     ███████╗███████╗██║██║ ╚████║╚██████╔╝${NC}"
+echo -e "${RED}╚══════╝ ╚═════╝ ╚═╝     ╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ${NC}"
+echo -e "${GREEN}                               by h0tak88r${NC}"
+
 # Passive subdomain enumeration
 echo -e "${RED}[+] Let's start with passive subdomain enumeration${NC}"
 
