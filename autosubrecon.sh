@@ -68,7 +68,9 @@ echo -e "${RED}[+] Start active subdomain enumeration!${NC}"
 
 # 1. DNS Brute Forcing using puredns
 echo -e "${GREEN}[+] DNS Brute Forcing using puredns${NC}"
-puredns bruteforce "$wordlists_dir/dns/dns_9m.txt" "$domain" -r "$wordlists_dir/dns/valid_resolvers.txt" -w "$subs_dir/dns_bf.txt"
+while IFS= read -r domain; do
+puredns bruteforce "$wordlists_dir/dns/dns_2m.txt" "$domain" -r "$wordlists_dir/dns/valid_resolvers.txt" -w "$subs_dir/dns_bf.txt"
+done < $inscope_file
 
 # 2. Permutations using gotator
 echo -e "${GREEN}[+] Permutations using gotator${NC}"
