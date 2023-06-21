@@ -1,6 +1,8 @@
 # AutoSubRecon
 
 AutoSubRecon is a bash script designed to automate the subdomain enumeration process, providing both passive and active enumeration options. It leverages various tools to gather subdomains and filter out the results for further analysis.
+# Usage
+- `bash autosubrecon.sh <target>`
 
 ## Workflow
 
