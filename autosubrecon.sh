@@ -111,7 +111,17 @@ echo -e "${RED}[+] Done with Active subdomain enumeration!${NC}"
 
 # Finishing our subdomain enumeration
 echo -e "${BLUE}[+] Finishing our work and filtering out the subdomains${NC}"
+
+# Combining all the subdomains
+echo -e "${BLUE}[+] Removing duplicates from subdomains${NC}"
 cat "$subs_dir/"* | sort -u > "$subs_dir/filtered_subs.txt"
-cat "$subs_dir/filtered_subs.txt" | httpx -random-agent -retries 2 -o "$subs_dir/filtered_hosts.txt"
-cat "$subs_dir/filtered_hosts.txt" | sort -u > "$subs_dir/filtered_hosts.txt"
+
+# Filtering out the subdomains
+echo -e "${BLUE}[+] Resolving subdomains and save the output to all_subs_resolved.txt${NC}"
+puredns resolve "$subs_dir/filtered_subs.txt" -r "$wordlists_dir/dns/valid_resolvers.txt" -w "$subs_dir/all_subs_resolved.txt"
+
+# Running httpx on the subdomains
+echo -e "${BLUE}[+] web probing using httpx and save the output to filtered_hosts.txt${NC}"
+cat "$subs_dir/all_subs_resolved.txt" | httpx -random-agent -retries 2 --silent -o "$subs_dir/filtered_hosts.txt"
+
 echo -e "${RED}[+] That's it, we are done with subdomain enumeration!${NC}"
