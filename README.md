@@ -27,7 +27,7 @@ AutoSubRecon is a bash script designed to automate the subdomain enumeration pro
 ### Finishing Work
 
 1. **Subdomain Filtering**: AutoSubRecon removes duplicate subdomains and saves the filtered results in **filtered_subs.txt**.
-2. **Host Discovery**: The script utilizes [httpx](https://github.com/encode/httpx) to fetch corresponding hosts for the filtered subdomains, saving the results in **filtered_hosts.txt**.
+2. **Host Discovery**: The script utilizes [httpx](https://github.com/projectdiscovery/httpx) to fetch corresponding hosts for the filtered subdomains, saving the results in **filtered_hosts.txt**.
 
 ## Requirements
 
