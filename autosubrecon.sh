@@ -1,10 +1,11 @@
 #!/bin/bash
 
 # Define directories and files
-subs_dir="subs/"
-wordlists_dir="Wordlists/"
+subs_dir="subs"
+wordlists_dir="Wordlists"
 
 # Make directories if they don't exist
+rm -r $subs_dir
 mkdir -p "$subs_dir"
 mkdir -p "$wordlists_dir/dns"
 
@@ -80,15 +81,11 @@ puredns bruteforce "$wordlists_dir/dns/dns_2m.txt" "$target_domain" -r "$wordlis
 
 # 2. Permutations using gotator
 echo -e "${GREEN}[+] Permutations using gotator${NC}"
-gotator -sub "$target_domain" -perm "$wordlists_dir/dns/dns_permutations_list.txt" -depth 1 -numbers 10 -mindup -adv -md | sort -u > "$subs_dir/perms.txt"
-
-# Resolving permutations using puredns
-echo -e "${GREEN}[+] Resolving permutations using puredns${NC}"
-puredns resolve "$subs_dir/perms.txt" -r "$wordlists_dir/dns/valid_resolvers.txt" -w "$subs_dir/resolved_perms.txt" &> /dev/null
+gotator -sub "$subs_dir/dns_bf.txt" -perm "$wordlists_dir/dns/dns_permutations_list.txt" -depth 1 -numbers 10 -mindup -adv -md | sort -u > "$subs_dir/perms.txt"
 
 # 3. TLS probing using cero
 echo -e "${GREEN}[+] TLS probing using cero${NC}"
-cero "$target_domain" | sed 's/^*.//' | grep -e "\." | sort -u > "$subs_dir/tls_probing.txt"
+cero "$target_domain" | sed 's/^*.//' | grep -e "\." | sort -u |  grep ".$target_domain" > "$subs_dir/tls_probing.txt"
 
 # 4. Scraping (JS/Source code)
 echo -e "${GREEN}[+] Scraping (JS/Source code)${NC}"
@@ -99,14 +96,11 @@ cat "$subs_dir/filtered_subs.txt" | httpx -random-agent -retries 2 -o "$subs_dir
 echo -e "${GREEN}[+] Crawling for js files using gospider${NC}"
 gospider -S "$subs_dir/filtered_hosts.txt" --js -t 50 -d 3 --sitemap --robots -w -r > "$subs_dir/gospider.txt"
 
-# Cleaning the output
-echo -e "${GREEN}[+] Cleaning the output${NC}"
+# Extracting subdomains from JS Files
+echo -e "${GREEN}[+] Extracting Subdomains......${NC}"
 sed -i '/^.\{2048\}./d' "$subs_dir/gospider.txt"
-cat "$subs_dir/gospider.txt" | grep -Eo 'https?://[^ ]+' | sed 's/]$//' | unfurl -u domains | grep ".$domain$" | sort -u > "$subs_dir/scrap_subs.txt"
-
-# Resolving target subdomains
-echo -e "${GREEN}[+] Resolving target subdomains${NC}"
-puredns resolve "$subs_dir/scrap_subs.txt" -r "$wordlists_dir/dns/valid_resolvers.txt" -w "$subs_dir/scrap_subs_resolved.txt" &> /dev/null
+cat "$subs_dir/gospider.txt" | grep -Eo 'https?://[^ ]+' | sed 's/]$//' | unfurl -u domains | grep "$target_domain" | sort -u > "$subs_dir/scrap_subs.txt"
+rm "$subs_dir/gospider.txt"
 
 # Done with active subdomain enumeration
 echo -e "${RED}[+] Done with Active subdomain enumeration!${NC}"
@@ -116,7 +110,7 @@ echo -e "${BLUE}[+] Finishing our work and filtering out the subdomains${NC}"
 
 # Combining all the subdomains
 echo -e "${BLUE}[+] Removing duplicates from subdomains${NC}"
-cat "$subs_dir/"* | sort -u > "$subs_dir/filtered_subs.txt"
+cat "$subs_dir/"* | sort -u > "$subs_dir/all_subs_filtered.txt"
 
 # Filtering out the subdomains
 echo -e "${BLUE}[+] Resolving subdomains and save the output to all_subs_resolved.txt${NC}"
