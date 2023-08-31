@@ -1,20 +1,10 @@
 #!/bin/bash
 
-# Define directories and files
-subs_dir="subs"
-wordlists_dir="Wordlists"
-
 # Make directories if they don't exist
-rm -r $subs_dir
-mkdir -p "$subs_dir"
-mkdir -p "$wordlists_dir/dns"
+rm -r subs/
+mkdir -p "subs"
+mkdir -p "Wordlists/dns"
 
-# Define colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
 
 ascii_art=''' 
  /\   _|_ _ (~   |_ |~) _  _ _  _ 
@@ -22,7 +12,7 @@ ascii_art='''
                         
                 by @h0tak88r
 '''
-echo -e "${RED}$ascii_art${NC}"
+echo  "$ascii_art"
 
 # Set the target domain
 target_domain="$1"
@@ -34,7 +24,7 @@ if [ -z "$target_domain" ]; then
 fi
 
 # Passive subdomain enumeration
-echo -e "${RED}[+] Let's start with passive subdomain enumeration!	 ${NC}"
+echo  "[+] Let's start with passive subdomain enumeration!	 "
 
 # URLs to fetch subdomains from various sources
 urls=(
@@ -53,71 +43,74 @@ urls=(
 )
 
 # Fetch subdomains from various sources concurrently
-echo -e "${YELLOW}[+] Getting $target_domain subdomains using [crt.sh,rapiddns,alienvault,hackertarget,urlscan,jldc.me,google,bing]${NC}"
+echo  "[+] Getting $target_domain subdomains using [crt.sh,rapiddns,alienvault,hackertarget,urlscan,jldc.me,google,bing]"
 
 for url in "${urls[@]}"; do
-    curl -s "$url" | grep -o -E '([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\.'"$target_domain"'' >> "$subs_dir/passive.txt"
+    curl -s "$url" | grep -o  '([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\.'"$target_domain"'' >> "subs/passive.txt"
 done
 
 wait
 
-echo -e "${BLUE}[+] Removing duplicates.....${NC}"
-echo -e "${BLUE}[+] Saving to quick_passive.txt${NC}"
+echo  "[+] Removing duplicates....."
+echo  "[+] Saving to quick_passive.txt"
 
-cat "$subs_dir/passive.txt" | sort -u > "$subs_dir/quick_passive.txt"
-rm "$subs_dir/passive.txt"
+cat "subs/passive.txt" | sort -u > "subs/quick_passive.txt"
+rm "subs/passive.txt"
 
-echo -e "${BLUE}[+] Using subfinder for passive subdomain enumeration ${NC}"
-subfinder -d $target_domain --all --silent > "$subs_dir/subfinder.txt"
+echo  "[+] Using subfinder for passive subdomain enumeration "
+subfinder -d $target_domain --all --silent > "subs/subfinder.txt"
 
-echo -e "${BLUE}[+] That's it, we are done with passive subdomain enumeration !${NC}"
+echo  "[+] That's it, we are done with passive subdomain enumeration !"
 
 # Active subdomain enumeration
-echo -e "${RED}[+] Start active subdomain enumeration!${NC}"
+echo  "[+] Start active subdomain enumeration!"
 
 # 1. DNS Brute Forcing using puredns
-echo -e "${GREEN}[+] DNS Brute Forcing using puredns${NC}"
-puredns bruteforce "$wordlists_dir/dns/dns_2m.txt" "$target_domain" -r "$wordlists_dir/dns/valid_resolvers.txt" -w "$subs_dir/dns_bf.txt" &> /dev/null
+echo  "[+] DNS Brute Forcing using puredns"
+puredns bruteforce "Wordlists/dns/dns_2m.txt" "$target_domain" -r "Wordlists/dns/valid_resolvers.txt" -w "subs/dns_bf.txt" --skip-wildcard-filter --skip-validation &> /dev/null
+
+echo  "[+] resolving brute forced subs...."
+puredns resolve "subs/dns_bf.txt" -r "Wordlists/dns/valid_resolvers.txt" -w "subs/dns_bf_resolved.txt"  --skip-wildcard-filter --skip-validation &> /dev/null
 
 # 2. Permutations using gotator
-echo -e "${GREEN}[+] Permutations using gotator${NC}"
-gotator -sub "$subs_dir/dns_bf.txt" -perm "$wordlists_dir/dns/dns_permutations_list.txt" -depth 1 -numbers 10 -mindup -adv -md | sort -u > "$subs_dir/perms.txt"
+echo  "[+] Permutations using gotator"
+gotator -sub "subs/dns_bf_resolved.txt" -perm "Wordlists/dns/dns_permutations_list.txt" -mindup -fast -silent | sort -u > "subs/permutations.txt"
 
 # 3. TLS probing using cero
-echo -e "${GREEN}[+] TLS probing using cero${NC}"
-cero "$target_domain" | sed 's/^*.//' | grep -e "\." | sort -u |  grep ".$target_domain" > "$subs_dir/tls_probing.txt"
+echo  "[+] TLS probing using cero"
+cero "$target_domain" | sed 's/^*.//' | grep  "\." | sort -u |  grep ".$target_domain$" > "subs/tls_probing.txt"
 
-# 4. Scraping (JS/Source code)
-echo -e "${GREEN}[+] Scraping (JS/Source code)${NC}"
-cat "$subs_dir/"* | sort -u > "$subs_dir/filtered_subs.txt"
-cat "$subs_dir/filtered_subs.txt" | httpx -random-agent -retries 2 -o "$subs_dir/filtered_hosts.txt" &> /dev/null
+# 4. Scraping (JS/Source) code
+echo  "[+] Scraping JS Source code "
+cat "subs/"* | sort -u > "subs/filtered_subs.txt"
+cat "subs/filtered_subs.txt" | httpx -random-agent -retries 2 -o "subs/filtered_hosts.txt" &> /dev/null
 
 # Crawling using gospider
-echo -e "${GREEN}[+] Crawling for js files using gospider${NC}"
-gospider -S "$subs_dir/filtered_hosts.txt" --js -t 50 -d 3 --sitemap --robots -w -r > "$subs_dir/gospider.txt"
+echo  "[+] Crawling for js files using gospider"
+gospider -S "subs/filtered_hosts.txt" --js -t 50 -d 3 --sitemap --robots -w -r > "subs/gospider.txt"
 
 # Extracting subdomains from JS Files
-echo -e "${GREEN}[+] Extracting Subdomains......${NC}"
-sed -i '/^.\{2048\}./d' "$subs_dir/gospider.txt"
-cat "$subs_dir/gospider.txt" | grep -Eo 'https?://[^ ]+' | sed 's/]$//' | unfurl -u domains | grep "$target_domain" | sort -u > "$subs_dir/scrap_subs.txt"
-rm "$subs_dir/gospider.txt"
+echo  "[+] Extracting Subdomains......"
+sed -i '/^.\{2048\}./d' "subs/gospider.txt"
+cat "subs/gospider.txt" | grep o 'https?://[^ ]+' | sed 's/]$//' | unfurl -u domains | grep "$target_domain" | sort -u > "subs/scrap_subs.txt"
+rm "subs/gospider.txt"
 
 # Done with active subdomain enumeration
-echo -e "${RED}[+] Done with Active subdomain enumeration!${NC}"
+echo  "[+] Done with Active subdomain enumeration!"
 
 # Finishing our subdomain enumeration
-echo -e "${BLUE}[+] Finishing our work and filtering out the subdomains${NC}"
+echo  "[+] Finishing our work and filtering out the subdomains"
 
 # Combining all the subdomains
-echo -e "${BLUE}[+] Removing duplicates from subdomains${NC}"
-cat "$subs_dir/"* | sort -u > "$subs_dir/all_subs_filtered.txt"
+echo  "[+] Removing duplicates from subdomains"
+cat "subs/"* | sort -u > "subs/all_subs_filtered.txt"
 
 # Filtering out the subdomains
-echo -e "${BLUE}[+] Resolving subdomains and save the output to all_subs_resolved.txt${NC}"
-puredns resolve "$subs_dir/filtered_subs.txt" -r "$wordlists_dir/dns/valid_resolvers.txt" -w "$subs_dir/all_subs_resolved.txt" &> /dev/null
+echo  " [+] Resolving subdomains and save the output to all_subs_resolved.txt"
+puredns resolve "subs/filtered_subs.txt" -r "Wordlists/dns/valid_resolvers.txt" -w "subs/all_subs_resolved.txt" --skip-wildcard-filter --skip-validation &> /dev/null
 
 # Running httpx on the subdomains
-echo -e "${BLUE}[+] web probing using httpx and save the output to filtered_hosts.txt${NC}"
-cat "$subs_dir/all_subs_resolved.txt" | httpx -random-agent -retries 2 --silent -o "$subs_dir/filtered_hosts.txt"  &> /dev/null
+echo " [+] web probing using httpx and save the output to filtered_hosts.txt"
+cat "subs/all_subs_resolved.txt" | httpx -random-agent -retries 2 --silent -o "subs/filtered_hosts.txt"  &> /dev/null
 
-echo -e "${RED}[+] That's it, we are done with subdomain enumeration!${NC}"
+echo "[+] Thats it we are done with subdomain enumeration!"
