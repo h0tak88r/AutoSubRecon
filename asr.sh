@@ -5,10 +5,9 @@ target_domain="$1"
 
 # Check if target_domain is provided
 if [ -z "$target_domain" ]; then
-  echo "[+] usage $0 domain.com "
+  echo "[+] Usage: $0 domain.com"
   exit 1
 fi
-
 
 # Color codes
 RED='\033[0;31m'
@@ -17,7 +16,6 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-
 ascii_art=''' 
 ┏┓┳┳┏┳┓┏┓┏┓┳┳┳┓┳┓┏┓┏┓┏┓┳┓
 ┣┫┃┃ ┃ ┃┃┗┓┃┃┣┫┣┫┣ ┃ ┃┃┃┃
@@ -25,16 +23,20 @@ ascii_art='''
 '''
 echo -e "${RED} $ascii_art ${NC}"
 
-rm -r subs/
+# Ensure we are in the script directory
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
 
-mkdir subs
+# Required Wordlists
+DNS_2M="Wordlists/dns/dns_2m.txt"
+RESOLVERS="Wordlists/dns/valid_resolvers.txt"
+PERM_LIST="Wordlists/dns/dns_permutations_list.txt"
 
 check_tools() {
-    local tools=("subfinder" "puredns" "gotator" "cero" "httpx" "gospider" "unfurl")
+    local tools=("subfinder" "puredns" "gotator" "cero" "httpx" "gospider" "unfurl" "curl" "grep" "sort" "sed")
     local missing_tools=()
     
     echo "[+] Checking for required tools..."
-    
     for tool in "${tools[@]}"; do
         if ! command -v "$tool" &> /dev/null; then
             missing_tools+=("$tool")
@@ -44,195 +46,117 @@ check_tools() {
     if [ ${#missing_tools[@]} -ne 0 ]; then
         echo -e "${RED}[-] Missing required tools: ${missing_tools[*]}${NC}"
         echo -e "${YELLOW}[!] Please install the missing tools before running the script${NC}"
-        echo "Installation guides:"
-        echo "subfinder: go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-        echo "puredns: go install github.com/d3mondev/puredns/v2@latest"
-        echo "gotator: go install github.com/Josue87/gotator@latest"
-        echo "cero: go install github.com/glebarez/cero@latest"
-        echo "httpx: go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest"
-        echo "gospider: go install github.com/jaeles-project/gospider@latest"
-        echo "unfurl: go install github.com/tomnomnom/unfurl@latest"
         exit 1
     fi
-    
     echo -e "${GREEN}[+] All required tools are installed!${NC}"
 }
 
-check_tools
-
-finish_work() {
-    echo "[+] Combining subdomains and resolving them..."
-    cat "subs/"* | sort -u > "subs/all_subs_filtered.txt"
-    puredns resolve "subs/all_subs_filtered.txt" -r "Wordlists/dns/valid_resolvers.txt" -w "subs/all_subs_resolved.txt" --skip-wildcard-filter --skip-validation &> /dev/null
-    cat "subs/all_subs_resolved.txt" | httpx -random-agent -retries 2 --silent -o "subs/filtered_hosts.txt"  &> /dev/null
-    echo "[+] Thats it we are done with subdomain enumeration!"
+setup_dir() {
+    echo "[+] Setting up work directory..."
+    rm -rf subs
+    mkdir -p subs
 }
-
 
 passive_recon() {
-	# URLs to fetch subdomains from various sources
-	urls=(
-		"https://rapiddns.io/subdomain/$target_domain?full=1#result"
-		"http://web.archive.org/cdx/search/cdx?url=*.$target_domain/*&output=text&fl=original&collapse=urlkey"
-		"https://crt.sh/?q=%.$target_domain"
-		"https://crt.sh/?q=%.%.$target_domain"
-		"https://crt.sh/?q=%.%.%.$target_domain"
-		"https://crt.sh/?q=%.%.%.%.$target_domain"
-		"https://otx.alienvault.com/api/v1/indicators/domain/$target_domain/passive_dns"
-		"https://api.hackertarget.com/hostsearch/?q=$target_domain"
-		"https://urlscan.io/api/v1/search/?q=$target_domain"
-		"https://jldc.me/anubis/subdomains/$target_domain"
-		"https://www.google.com/search?q=site%3A$target_domain&num=100"
-		"https://www.bing.com/search?q=site%3A$target_domain&count=50"
-	)
-    # Passive subdomain enumeration
-    echo "[+] Let's start with passive subdomain enumeration!"
+    echo "[+] Starting passive subdomain enumeration..."
     
-    echo  "[+] Getting $target_domain subdomains using [crt.sh,rapiddns,alienvault,hackertarget,urlscan,jldc.me,google,bing]"
-
-	for url in "${urls[@]}"; do
-		curl -s "$url" | grep -o  '([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\.'"$target_domain"'' >> "subs/passive.txt"
-	done
-
-	wait
-
-	echo  "[+] Removing duplicates....."
-	echo  "[+] Saving to quick_passive.txt"
-
-	cat "subs/passive.txt" | sort -u > "subs/quick_passive.txt"
-	rm "subs/passive.txt"
-
-	echo  "[+] Using subfinder for passive subdomain enumeration "
-	subfinder -d $target_domain --all --silent > "subs/subfinder.txt"
+    # Background various passive sources
+    echo "[+] Fetching from multiple sources (parallel)..."
+    (curl -s "https://rapiddns.io/subdomain/$target_domain?full=1#result" | grep -oE "[a-zA-Z0-9._-]+\.$target_domain" >> "subs/passive_raw.txt") &
+    (curl -s "http://web.archive.org/cdx/search/cdx?url=*.$target_domain/*&output=text&fl=original&collapse=urlkey" | grep -oE "[a-zA-Z0-9._-]+\.$target_domain" >> "subs/passive_raw.txt") &
+    (curl -s "https://crt.sh/?q=%.$target_domain" | grep -oE "[a-zA-Z0-9._-]+\.$target_domain" >> "subs/passive_raw.txt") &
+    (curl -s "https://otx.alienvault.com/api/v1/indicators/domain/$target_domain/passive_dns" | grep -oE "[a-zA-Z0-9._-]+\.$target_domain" >> "subs/passive_raw.txt") &
+    (curl -s "https://api.hackertarget.com/hostsearch/?q=$target_domain" | grep -oE "[a-zA-Z0-9._-]+\.$target_domain" >> "subs/passive_raw.txt") &
+    (curl -s "https://jldc.me/anubis/subdomains/$target_domain" | grep -oE "[a-zA-Z0-9._-]+\.$target_domain" >> "subs/passive_raw.txt") &
+    (curl -s "https://urlscan.io/api/v1/search/?q=$target_domain" | grep -oE "[a-zA-Z0-9._-]+\.$target_domain" >> "subs/passive_raw.txt") &
     
-    echo "[+] That's it, we are done with passive subdomain enumeration!"
-	finish_work
+    wait
+    
+    echo "[+] Running subfinder..."
+    subfinder -d "$target_domain" --all --silent >> "subs/passive_raw.txt"
+    
+    sort -u "subs/passive_raw.txt" -o "subs/passive_unique.txt"
+    echo -e "${GREEN}[+] Passive enumeration complete. Found $(wc -l < "subs/passive_unique.txt") subdomains.${NC}"
 }
 
-# Define a function for active reconnaissance
-active_recon() {
-    # Active subdomain enumeration
-    echo "[+] Start active subdomain enumeration!"
-    
-    echo  "[+] DNS Brute Forcing using puredns"
-	puredns bruteforce "Wordlists/dns/dns_2m.txt" "$target_domain" -r "Wordlists/dns/valid_resolvers.txt" -w "subs/dns_bf.txt" --skip-wildcard-filter --skip-validation &> /dev/null
-
-	echo  "[+] resolving brute forced subs...."
-	puredns resolve "subs/dns_bf.txt" -r "Wordlists/dns/valid_resolvers.txt" -w "subs/dns_bf_resolved.txt"  --skip-wildcard-filter --skip-validation &> /dev/null
-
-	# Permutations using gotator
-	echo  "[+] Permutations using gotator"
-	gotator -sub "subs/dns_bf_resolved.txt" -perm "Wordlists/dns/dns_permutations_list.txt" -mindup -fast -silent | sort -u > "subs/permutations.txt"
-
-	# TLS probing using cero
-	echo  "[+] TLS probing using cero"
-	cero "$target_domain" | sed 's/^*.//' | grep  "\." | sort -u |  grep ".$target_domain$" > "subs/tls_probing.txt"
-
-	# Scraping (JS/Source) code
-	echo  "[+] Scraping JS Source code "
-	cat "subs/"* | sort -u > "subs/filtered_subs.txt"
-	cat "subs/filtered_subs.txt" | httpx -random-agent -retries 2 -o "subs/filtered_hosts.txt" &> /dev/null
-
-	# Crawling using gospider
-	echo  "[+] Crawling for js files using gospider"
-	gospider -S "subs/filtered_hosts.txt" --js -t 50 -d 3 --sitemap --robots -w -r > "subs/gospider.txt"
-
-	# Extracting subdomains from JS Files
-	echo  "[+] Extracting Subdomains......"
-	sed -i '/^.\{2048\}./d' "subs/gospider.txt"
-	cat "subs/gospider.txt" | grep -o 'https?://[^ ]+' | sed 's/]$//' | unfurl -u domains | grep "$target_domain" | sort -u > "subs/scrap_subs.txt"
-	rm "subs/gospider.txt"
-    
-    echo "[+] Done with Active subdomain enumeration!"
-	finish_work
+dns_bruteforce() {
+    echo "[+] Starting DNS brute forcing with puredns..."
+    if [ ! -f "$DNS_2M" ]; then
+        echo -e "${YELLOW}[!] Brute force wordlist $DNS_2M not found, skipping.${NC}"
+        return
+    fi
+    puredns bruteforce "$DNS_2M" "$target_domain" -r "$RESOLVERS" -w "subs/dns_bf_raw.txt" --skip-wildcard-filter --skip-validation &> /dev/null
+    echo -e "${GREEN}[+] Brute force complete.${NC}"
 }
 
-# Define a function for normal reconnaissance
-normal_recon() {
-    passive_recon
+dns_permutations() {
+    echo "[+] Starting permutations with gotator..."
+    if [ ! -f "subs/dns_bf_raw.txt" ] && [ ! -f "subs/passive_unique.txt" ]; then
+        echo -e "${YELLOW}[!] No initial subdomains for permutations, skipping.${NC}"
+        return
+    fi
     
-    # Active subdomain enumeration
-	echo  "[+] Start active subdomain enumeration!"
-
-	# 1. DNS Brute Forcing using puredns
-	echo  "[+] DNS Brute Forcing using puredns"
-	puredns bruteforce "Wordlists/dns/dns_2m.txt" "$target_domain" -r "Wordlists/dns/valid_resolvers.txt" -w "subs/dns_bf.txt" --skip-wildcard-filter --skip-validation &> /dev/null
-
-	echo  "[+] resolving brute forced subs...."
-	puredns resolve "subs/dns_bf.txt" -r "Wordlists/dns/valid_resolvers.txt" -w "subs/dns_bf_resolved.txt"  --skip-wildcard-filter --skip-validation &> /dev/null
-
-	# 3. TLS probing using cero
-	echo  "[+] TLS probing using cero"
-	cero "$target_domain" | sed 's/^*.//' | grep  "\." | sort -u |  grep ".$target_domain$" > "subs/tls_probing.txt"
-
-	# 4. Scraping (JS/Source) code
-	echo  "[+] Scraping JS Source code "
-	cat "subs/"* | sort -u > "subs/filtered_subs.txt"
-	cat "subs/filtered_subs.txt" | httpx -random-agent -retries 2 -o "subs/filtered_hosts.txt" &> /dev/null
-
-	# Crawling using gospider
-	echo  "[+] Crawling for js files using gospider"
-	gospider -S "subs/filtered_hosts.txt" --js -t 50 -d 3 --sitemap --robots -w -r > "subs/gospider.txt"
-
-	# Extracting subdomains from JS Files
-	echo  "[+] Extracting Subdomains......"
-	sed -i '/^.\{2048\}./d' "subs/gospider.txt"
-	cat "subs/gospider.txt" | grep -o 'https?://[^ ]+' | sed 's/]$//' | unfurl -u domains | grep "$target_domain" | sort -u > "subs/scrap_subs.txt"
-	rm "subs/gospider.txt"
-
-	# Done with active subdomain enumeration
-	echo  "[+] Done with Active subdomain enumeration!"
-    
-    echo "[+] Normal Recon is complete!"
-	finish_work
+    cat "subs/passive_unique.txt" "subs/dns_bf_raw.txt" 2>/dev/null | sort -u > "subs/temp_for_perm.txt"
+    gotator -sub "subs/temp_for_perm.txt" -perm "$PERM_LIST" -mindup -fast -silent | sort -u > "subs/permutations_raw.txt"
+    rm "subs/temp_for_perm.txt"
+    echo -e "${GREEN}[+] Permutations complete.${NC}"
 }
 
-# Define a function for quick reconnaissance
-quick_recon() {
-    passive_recon
-    
-	# TLS probing using cero
-	echo  "[+] TLS probing using cero"
-	cero "$target_domain" | sed 's/^*.//' | grep  "\." | sort -u |  grep ".$target_domain$" > "subs/tls_probing.txt"
-
-	# Scraping (JS/Source) code
-	echo  "[+] Scraping JS Source code "
-	cat "subs/"* | sort -u > "subs/filtered_subs.txt"
-	cat "subs/filtered_subs.txt" | httpx -random-agent -retries 2 -o "subs/filtered_hosts.txt" &> /dev/null
-
-	# Crawling using gospider
-	echo  "[+] Crawling for js files using gospider"
-	gospider -S "subs/filtered_hosts.txt" --js -t 50 -d 3 --sitemap --robots -w -r > "subs/gospider.txt"
-
-	# Extracting subdomains from JS Files
-	echo  "[+] Extracting Subdomains......"
-	sed -i '/^.\{2048\}./d' "subs/gospider.txt"
-	cat "subs/gospider.txt" | grep -o 'https?://[^ ]+' | sed 's/]$//' | unfurl -u domains | grep "$target_domain" | sort -u > "subs/scrap_subs.txt"
-	rm "subs/gospider.txt"    
-    echo "[+] Quick Recon is complete!"
-	finish_work
+tls_probing() {
+    echo "[+] Starting TLS probing with cero..."
+    cero "$target_domain" | sed 's/^\*\.//' | grep "\." | grep "\.$target_domain$" | sort -u > "subs/tls_probing_raw.txt"
+    echo -e "${GREEN}[+] TLS probing complete.${NC}"
 }
 
-# Define a function for full reconnaissance
-full_recon() {
-    passive_recon
-    active_recon
+scraping_js() {
+    echo "[+] Scraping JS files for subdomains..."
+    # We need resolved hosts first for scraping
+    cat "subs/"*_raw.txt "subs/passive_unique.txt" 2>/dev/null | sort -u > "subs/all_potential.txt"
+    puredns resolve "subs/all_potential.txt" -r "$RESOLVERS" -w "subs/all_resolved_temp.txt" --skip-wildcard-filter --skip-validation &> /dev/null
     
-    echo "[+] Full Recon is complete!"
-	finish_work
+    cat "subs/all_resolved_temp.txt" | httpx -random-agent -retries 2 -silent -o "subs/live_for_scraping.txt" &> /dev/null
+    
+    if [ ! -s "subs/live_for_scraping.txt" ]; then
+        echo -e "${YELLOW}[!] No live hosts found for scraping.${NC}"
+        return
+    fi
+    
+    gospider -S "subs/live_for_scraping.txt" --js -t 50 -d 3 --sitemap --robots -w -r > "subs/gospider_raw.txt"
+    
+    # Extracting subdomains from gospider output
+    sed -i '/^.\{2048\}./d' "subs/gospider_raw.txt" # Remove huge lines
+    cat "subs/gospider_raw.txt" | grep -oE "https?://[^ ]+" | sed 's/]$//' | unfurl -u domains | grep "$target_domain" | sort -u > "subs/scrap_subs_raw.txt"
+    rm "subs/gospider_raw.txt"
+    echo -e "${GREEN}[+] JS scraping complete.${NC}"
 }
 
-# Display options and process user's choice
+finish_work() {
+    echo "[+] Aggregating and resolving all discovered subdomains..."
+    cat "subs/"*_raw.txt "subs/passive_unique.txt" 2>/dev/null | sort -u > "subs/all_subs_combined.txt"
+    
+    puredns resolve "subs/all_subs_combined.txt" -r "$RESOLVERS" -w "all_subs_resolved.txt" --skip-wildcard-filter --skip-validation &> /dev/null
+    
+    echo "[+] Checking live hosts..."
+    cat "all_subs_resolved.txt" | httpx -random-agent -retries 2 --silent -o "filtered_hosts.txt" &> /dev/null
+    
+    echo -e "${GREEN}[+] Done! Results saved to all_subs_resolved.txt and filtered_hosts.txt${NC}"
+}
+
+# --- Execution Flow ---
+
+check_tools
+setup_dir
+
 options='''
 Choose what you wanna do?
 [1] Passive recon only
-[2] Active recon only
-[3] Normal Recon [All without permutations]
-[4] Quick Recon [All without Brute forcing and Permutations]
+[2] Active recon only (Brute forcing, Permutations, Probing)
+[3] Normal Recon [Passive + Active without Permutations]
+[4] Quick Recon [Passive + TLS Probing + Scraping]
 [5] Full recon [All Techniques]
 '''
 
-echo -e "${GREEN} $options ${NC}"
+echo -e "${BLUE}$options${NC}"
 read -p "Enter your choice: " choice
 
 case $choice in
@@ -240,16 +164,27 @@ case $choice in
         passive_recon
         ;;
     2)
-        active_recon
+        dns_bruteforce
+        dns_permutations
+        tls_probing
         ;;
     3)
-        normal_recon
+        passive_recon
+        dns_bruteforce
+        tls_probing
+        scraping_js
         ;;
     4)
-        quick_recon
+        passive_recon
+        tls_probing
+        scraping_js
         ;;
     5)
-        full_recon
+        passive_recon
+        dns_bruteforce
+        dns_permutations
+        tls_probing
+        scraping_js
         ;;
     *)
         echo "Invalid choice. Exiting."
@@ -257,4 +192,5 @@ case $choice in
         ;;
 esac
 
-echo "[+] Finished."
+finish_work
+echo "[+] All tasks finished."
