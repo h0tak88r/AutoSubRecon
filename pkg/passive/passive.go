@@ -56,10 +56,6 @@ func (r *Runner) Enumerate(ctx context.Context, domain string) ([]string, error)
 
 	// 2. SecurityTrails (Custom)
 	apiKey := os.Getenv("SECURITYTRAILS_API_KEY")
-	if apiKey == "" {
-		// FALLBACK to the one provided in the user's script for convenience
-		apiKey = "Wc_qPs4g7pv2FhadVFfs_sCR83HjQ1Ea"
-	}
 	
 	if apiKey != "" {
 		st := NewSecurityTrailsSource(apiKey)
